@@ -1176,6 +1176,14 @@ fn load_attribute(
             err_msg,
             cursor,
         ),
+        CONSTANT_ACCESSOR => deserialize_function_attribute(
+            bytecode_version,
+            VERSION_11,
+            |_cursor| Ok(FunctionAttribute::ConstantAccessor),
+            "const",
+            err_msg,
+            cursor,
+        ),
         IMMUTABLE => deserialize_function_attribute(
             bytecode_version,
             VERSION_11,
@@ -2375,6 +2383,7 @@ impl SerializedFunctionAttribute {
             0x8 => Ok(BORROW_FIELD_IMMUTABLE),
             0x9 => Ok(BORROW_FIELD_MUTABLE),
             0xA => Ok(IMMUTABLE),
+            0xB => Ok(CONSTANT_ACCESSOR),
             _ => Err(PartialVMError::new(StatusCode::MALFORMED)
                 .with_message(format!("malformed attribute: {}", value))),
         }

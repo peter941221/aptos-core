@@ -827,16 +827,18 @@ pub enum StatusCode {
     // The struct API code does not have the correct implementation.
     // for instance, function attribute #[pack] must only be attached to the corresponding pack$S API.
     INVALID_STRUCT_API_CODE = 1136,
-
     // An #[immutable] function calls a callee that is neither #[immutable] nor native,
     // violating the requirement that immutable functions have stable behavior across upgrades.
     IMMUTABLE_FUNCTION_CALLS_NON_IMMUTABLE = 1137,
+    // The const API accessor function does not have the correct implementation.
+    // for instance, a const$FOO function must have exactly (LdU8/LdTrue/LdFalse.../LdConst + Ret as its body.
+    INVALID_CONST_API_CODE = 1138,
 
     // Reserved error code for future use
-    RESERVED_VERIFICATION_ERROR_1 = 1138,
-    RESERVED_VERIFICATION_ERROR_2 = 1139,
-    RESERVED_VERIFICATION_ERROR_3 = 1140,
-    RESERVED_VERIFICATION_ERROR_4 = 1141,
+    RESERVED_VERIFICATION_ERROR_1 = 1139,
+    RESERVED_VERIFICATION_ERROR_2 = 1140,
+    RESERVED_VERIFICATION_ERROR_3 = 1141,
+    RESERVED_VERIFICATION_ERROR_4 = 1142,
 
     // These are errors that the VM might raise if a violation of internal
     // invariants takes place.

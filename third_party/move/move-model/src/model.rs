@@ -4427,8 +4427,17 @@ pub struct NamedConstantData {
     /// The value of this constant, if known.
     pub(crate) value: Value,
 
+    /// Move language visibility (Public/Friend/Private) for this constant.
+    pub(crate) visibility: Visibility,
+
+    /// Whether this constant has `package` visibility. When true, `visibility` is `Friend`.
+    pub(crate) has_package_visibility: bool,
+
     /// Attributes attached to this constant.
     pub(crate) attributes: Vec<Attribute>,
+
+    /// Whether this constant is marked #[immutable] (its accessor body cannot change on upgrade).
+    pub(crate) is_immutable: bool,
 
     /// All users of this constant
     pub(crate) users: BTreeSet<UserId>,
@@ -4466,6 +4475,21 @@ impl NamedConstantEnv<'_> {
     /// Returns the type of the constant
     pub fn get_type(&self) -> Type {
         self.data.type_.clone()
+    }
+
+    /// Returns the Move language visibility of this constant.
+    pub fn get_visibility(&self) -> Visibility {
+        self.data.visibility
+    }
+
+    /// Returns whether this constant is marked `#[immutable]`.
+    pub fn is_immutable(&self) -> bool {
+        self.data.is_immutable
+    }
+
+    /// Returns whether this constant has `package` visibility.
+    pub fn has_package_visibility(&self) -> bool {
+        self.data.has_package_visibility
     }
 
     /// Returns the value of this constant

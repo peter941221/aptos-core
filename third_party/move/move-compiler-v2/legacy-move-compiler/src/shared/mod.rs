@@ -1012,9 +1012,16 @@ pub mod known_attributes {
         }
 
         fn expected_positions(&self) -> &'static BTreeSet<AttributePosition> {
-            static POSITIONS: Lazy<BTreeSet<AttributePosition>> =
+            static FUNCTION_ONLY: Lazy<BTreeSet<AttributePosition>> =
                 Lazy::new(|| IntoIterator::into_iter([AttributePosition::Function]).collect());
-            &POSITIONS
+            static FUNCTION_OR_CONSTANT: Lazy<BTreeSet<AttributePosition>> = Lazy::new(|| {
+                IntoIterator::into_iter([AttributePosition::Function, AttributePosition::Constant])
+                    .collect()
+            });
+            match self {
+                Self::Immutable => &FUNCTION_OR_CONSTANT,
+                Self::Persistent | Self::ModuleLock => &FUNCTION_ONLY,
+            }
         }
     }
 }

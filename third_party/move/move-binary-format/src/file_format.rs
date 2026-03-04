@@ -386,6 +386,8 @@ pub enum FunctionAttribute {
     BorrowFieldMutable(MemberCount),
     /// The function body is immutable: once published, the implementation cannot change on upgrade.
     Immutable,
+    /// Attribute for the API accessing a non-private constant.
+    ConstantAccessor,
 }
 
 impl FunctionAttribute {
@@ -414,6 +416,7 @@ impl FunctionAttribute {
             | FunctionAttribute::TestVariant(_)
             | FunctionAttribute::BorrowFieldImmutable(_)
             | FunctionAttribute::BorrowFieldMutable(_)
+            | FunctionAttribute::ConstantAccessor
             | FunctionAttribute::Immutable => true,
         }
     }
@@ -445,6 +448,7 @@ impl fmt::Display for FunctionAttribute {
             FunctionAttribute::BorrowFieldMutable(offset) => {
                 write!(f, "borrow_mut({})", offset)
             },
+            FunctionAttribute::ConstantAccessor => write!(f, "const"),
             FunctionAttribute::Immutable => write!(f, "immutable"),
         }
     }

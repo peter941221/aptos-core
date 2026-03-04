@@ -7,7 +7,7 @@
 //! abstract_interpreter.rs. CodeUnitVerifier simply orchestrates calls into these two files.
 use crate::{
     acquires_list_verifier::AcquiresVerifier,
-    control_flow, immutable_checker, locals_safety,
+    const_api_checker, control_flow, immutable_checker, locals_safety,
     meter::{BoundMeter, Meter, Scope},
     reference_safety,
     stack_usage_verifier::StackUsageVerifier,
@@ -87,9 +87,11 @@ impl<'a> CodeUnitVerifier<'a> {
                 .map_err(|err| err.at_index(IndexKind::FunctionDefinition, index.0))?;
             }
 
-            // Transitive call check: an #[immutable] function may only call other
-            // #[immutable] functions or native functions. Only runs for VERSION_11+ modules.
+            // VERSION_11+ attribute checks: constant accessor validation and
+            // #[immutable] transitive call check.
             if module.version() >= VERSION_11 {
+                const_api_checker::check_const_accessor_impl(module, function_definition)
+                    .map_err(|err| err.at_index(IndexKind::FunctionDefinition, index.0))?;
                 immutable_checker::check_immutable_transitive_calls(module, function_definition)
                     .map_err(|err| err.at_index(IndexKind::FunctionDefinition, index.0))?;
             }

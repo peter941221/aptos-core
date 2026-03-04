@@ -37,6 +37,7 @@ pub use verifier::{
 };
 
 mod acquires_list_verifier;
+mod const_api_checker;
 mod features;
 mod immutable_checker;
 mod locals_safety;

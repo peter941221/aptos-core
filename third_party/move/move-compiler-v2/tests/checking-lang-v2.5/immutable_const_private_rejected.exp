@@ -1,0 +1,7 @@
+
+Diagnostics:
+error: `#[immutable]` cannot be applied to a private constant; use `public` or `package` visibility
+  ┌─ tests/checking-lang-v2.5/immutable_const_private_rejected.move:5:5
+  │
+5 │     const PRIV: u64 = 42;
+  │     ^^^^^^^^^^^^^^^^^^^^^

@@ -62,7 +62,7 @@ use move_binary_format::{
 };
 use move_core_types::{
     language_storage::{
-        BORROW, BORROW_MUT, PACK, PACK_VARIANT, PUBLIC_STRUCT_DELIMITER, TEST_VARIANT, UNPACK,
+        BORROW, BORROW_MUT, DOLLAR_SIGN_DELIMITER, PACK, PACK_VARIANT, TEST_VARIANT, UNPACK,
         UNPACK_VARIANT,
     },
     vm_status::StatusCode,
@@ -177,7 +177,7 @@ fn try_get_struct_api_attr(
                 attr_attribute = Some(attr.clone());
                 true
             },
-            Persistent | ModuleLock | Immutable => false,
+            Persistent | ModuleLock | ConstantAccessor | Immutable => false,
         };
         if is_struct_api_attr {
             count += 1;
@@ -281,7 +281,7 @@ fn parse_and_validate_struct_api_name(
     ctx: &StructApiContext,
     expect_variant_in_name: bool,
 ) -> PartialVMResult<Option<StructApiNameInfo>> {
-    let parts: Vec<&str> = function_name.split(PUBLIC_STRUCT_DELIMITER).collect();
+    let parts: Vec<&str> = function_name.split(DOLLAR_SIGN_DELIMITER).collect();
 
     // Need at least 2 parts for any struct API function (e.g., "pack$S")
     if parts.len() < 2 {
@@ -305,7 +305,7 @@ fn parse_and_validate_struct_api_name(
     let mut struct_end = 0usize; // index into parts[] of first remaining part after struct name
     for (i, part) in parts.iter().enumerate().skip(1) {
         if i > 1 {
-            candidate.push_str(PUBLIC_STRUCT_DELIMITER);
+            candidate.push_str(DOLLAR_SIGN_DELIMITER);
         }
         candidate.push_str(part);
         if ctx.get_struct_handle(&candidate).is_some() {
@@ -344,7 +344,7 @@ fn parse_and_validate_struct_api_name(
                 Ok(Some(StructApiNameInfo::PackVariant {
                     struct_handle_idx,
                     struct_def_idx,
-                    variant_name: remaining.join(PUBLIC_STRUCT_DELIMITER),
+                    variant_name: remaining.join(DOLLAR_SIGN_DELIMITER),
                 }))
             }
         },
@@ -360,7 +360,7 @@ fn parse_and_validate_struct_api_name(
                 Ok(Some(StructApiNameInfo::UnpackVariant {
                     struct_handle_idx,
                     struct_def_idx,
-                    variant_name: remaining.join(PUBLIC_STRUCT_DELIMITER),
+                    variant_name: remaining.join(DOLLAR_SIGN_DELIMITER),
                 }))
             }
         },
@@ -372,7 +372,7 @@ fn parse_and_validate_struct_api_name(
             Ok(Some(StructApiNameInfo::TestVariant {
                 struct_handle_idx,
                 struct_def_idx,
-                variant_name: remaining.join(PUBLIC_STRUCT_DELIMITER),
+                variant_name: remaining.join(DOLLAR_SIGN_DELIMITER),
             }))
         },
         BORROW | BORROW_MUT => {
@@ -1661,6 +1661,7 @@ pub fn check_struct_api_impl(
         },
         FunctionAttribute::Persistent
         | FunctionAttribute::ModuleLock
+        | FunctionAttribute::ConstantAccessor
         | FunctionAttribute::Immutable => {
             // These should never reach here - try_get_struct_api_attr only returns struct API attributes.
             // If we reach this, Phase 1 validation failed to filter properly.

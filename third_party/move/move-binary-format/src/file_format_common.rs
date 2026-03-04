@@ -230,6 +230,7 @@ pub enum SerializedFunctionAttribute {
     BORROW_FIELD_IMMUTABLE = 0x8,
     BORROW_FIELD_MUTABLE = 0x9,
     IMMUTABLE = 0xA,
+    CONSTANT_ACCESSOR = 0xB,
 }
 
 /// List of opcodes constants.
@@ -568,6 +569,7 @@ pub const VERSION_9: u32 = 9;
 pub const VERSION_10: u32 = 10;
 
 /// Version 11: changes compared to version 10
+/// + constant accessor attribute (for public/package/friend const)
 /// + immutable function attribute (body cannot change on upgrade)
 pub const VERSION_11: u32 = 11;
 

@@ -37,6 +37,7 @@ pub mod lang_feature_versions {
     pub const LANGUAGE_VERSION_FOR_PUBLIC_STRUCT: LanguageVersion = LanguageVersion::V2_4;
     /// This version guards match support for primitive types.
     pub const LANGUAGE_VERSION_FOR_PRIMITIVE_MATCH: LanguageVersion = LanguageVersion::V2_4;
+    pub const LANGUAGE_VERSION_FOR_PUBLIC_CONST: LanguageVersion = LanguageVersion::V2_5;
     pub const LANGUAGE_VERSION_FOR_RAC: LanguageVersion =
         crate::metadata::LATEST_LANGUAGE_VERSION_VALUE;
 }
@@ -318,6 +319,10 @@ impl LanguageVersion {
 
     pub fn language_version_for_public_struct(&self) -> bool {
         self.is_at_least(lang_feature_versions::LANGUAGE_VERSION_FOR_PUBLIC_STRUCT)
+    }
+
+    pub fn language_version_for_public_const(&self) -> bool {
+        self.is_at_least(lang_feature_versions::LANGUAGE_VERSION_FOR_PUBLIC_CONST)
     }
 
     /// If the bytecode version is not specified, infer it from the language version. For

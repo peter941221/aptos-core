@@ -74,6 +74,8 @@ pub(crate) struct ModuleBuilder<'env, 'translator> {
     pub package_funs: BTreeSet<FunId>,
     /// Set of structs with package visibility in the current module
     pub package_structs: BTreeSet<StructId>,
+    /// Set of constants with package visibility in the current module
+    pub package_consts: BTreeSet<NamedConstantId>,
     /// Translated specification functions.
     pub spec_funs: Vec<SpecFunDecl>,
     /// During the definition analysis, the index into `spec_funs` we are currently
@@ -161,6 +163,7 @@ impl<'env, 'translator> ModuleBuilder<'env, 'translator> {
             package_fun_loc: None,
             package_funs: BTreeSet::new(),
             package_structs: BTreeSet::new(),
+            package_consts: BTreeSet::new(),
             friend_decls: vec![],
             spec_funs: vec![],
             inline_spec_builder: Spec::default(),
@@ -499,7 +502,44 @@ impl ModuleBuilder<'_, '_> {
                 &format!("duplicate declaration of const `{}`", &name.value()),
             )
         }
+        let const_id = NamedConstantId::new(qsym.symbol);
+        let (move_visibility, has_package_visibility) = match def.visibility {
+            EA::Visibility::Public(_) => (Visibility::Public, false),
+            EA::Visibility::Friend(loc) => {
+                if self.friend_visibility_loc.is_none() {
+                    self.friend_visibility_loc = Some(loc);
+                }
+                (Visibility::Friend, false)
+            },
+            EA::Visibility::Internal => (Visibility::Private, false),
+            EA::Visibility::Package(loc) => {
+                if self.package_fun_loc.is_none() {
+                    self.package_fun_loc = Some(loc);
+                }
+                self.package_consts.insert(const_id);
+                (Visibility::Friend, true)
+            },
+        };
         let attributes = self.translate_attributes(&def.attributes);
+        // Check if #[immutable] is present.
+        let is_immutable = attributes.iter().any(|a| {
+            if let Attribute::Apply(_, name, _) = a {
+                self.parent.env.symbol_pool().string(*name).as_str()
+                    == well_known::IMMUTABLE_ATTRIBUTE
+            } else {
+                false
+            }
+        });
+        // #[immutable] on a private constant has no effect: no accessor is generated for private
+        // constants, so there is nothing to pin. Reject it to avoid silent confusion.
+        if is_immutable && move_visibility == Visibility::Private {
+            let loc = self.parent.to_loc(&def.loc);
+            self.parent.env.error(
+                &loc,
+                "`#[immutable]` cannot be applied to a private constant; \
+                 use `public` or `package` visibility",
+            );
+        }
         let mut et = ExpTranslator::new(self);
         et.set_translate_move_fun();
         let loc = et.to_loc(&def.loc);
@@ -509,8 +549,11 @@ impl ModuleBuilder<'_, '_> {
             ty,
             value: Value::Bool(false), // dummy value, actual will be assigned in def_ana
             visibility: EntryVisibility::SpecAndImpl,
+            move_visibility,
+            has_package_visibility,
             users: BTreeSet::new(),
             attributes,
+            is_immutable,
         });
     }
 
@@ -3820,15 +3863,21 @@ impl ModuleBuilder<'_, '_> {
                 value,
                 ty,
                 visibility: _,
+                move_visibility,
+                has_package_visibility,
                 users,
                 attributes,
+                is_immutable,
             } = const_entry.clone();
             let data = NamedConstantData {
                 name: name.symbol,
                 loc,
                 type_: ty,
                 value,
+                visibility: move_visibility,
+                has_package_visibility,
                 attributes,
+                is_immutable,
                 users,
             };
             named_constants.insert(NamedConstantId::new(name.symbol), data);
