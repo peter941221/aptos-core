@@ -400,7 +400,16 @@ pub enum SpecBlockMember_ {
         uninterpreted: bool,
         name: FunctionName,
         signature: FunctionSignature,
+        access_specifiers: Option<Vec<AccessSpecifier>>,
         body: FunctionBody,
+    },
+    /// Declares the access (reads/writes) of a function-typed parameter.
+    /// `access_of<param>(args) reads/writes ...;` specifies which global
+    /// resources the function parameter may access when called.
+    AccessOf {
+        fun_param: Name,
+        params: Vec<(Var, Type)>,
+        access_specifiers: Vec<AccessSpecifier>,
     },
     Variable {
         is_global: bool,
@@ -652,8 +661,6 @@ pub enum BehaviorKind {
     AbortsOf,
     /// `ensures_of<f>(x, y)` - the postcondition of function `f`
     EnsuresOf,
-    /// `modifies_of<f>(x)` - the modify clauses of function `f`
-    ModifiesOf,
     /// `result_of<f>(x)` - deterministic result selector based on `ensures_of`
     ResultOf,
 }
@@ -751,31 +758,26 @@ pub enum Exp_ {
     ),
     // spec only
     // Behavior predicate for function values in specifications:
-    // [pre_label@]requires_of<f[<T1, ..., Tn>]>(args)[@post_label]
-    // [pre_label@]aborts_of<f[<T1, ..., Tn>]>(args)[@post_label]
-    // [pre_label@]ensures_of<f[<T1, ..., Tn>]>(args)[@post_label]
-    // [pre_label@]modifies_of<f[<T1, ..., Tn>]>(args)[@post_label]
+    // requires_of<f[<T1, ..., Tn>]>(args)
+    // aborts_of<f[<T1, ..., Tn>]>(args)
+    // ensures_of<f[<T1, ..., Tn>]>(args)
+    // result_of<f[<T1, ..., Tn>]>(args)
     Behavior(
         BehaviorKind,
-        Option<Label>,     // pre-state label
         NameAccessChain,   // function name
         Option<Vec<Type>>, // optional type instantiation
         Spanned<Vec<Exp>>, // arguments
-        Option<Label>,     // post-state label
     ), // spec only
-    // Labeled resource access in specifications:
-    // label@global<R>(addr) or label@exists<R>(addr)
-    LabeledCall(
-        Label,             // memory state label
-        NameAccessChain,   // "global" or "exists"
-        Option<Vec<Type>>, // type arguments
-        Spanned<Vec<Exp>>, // call arguments
-    ), // spec only
-    // label@R[addr] — labeled resource index access
-    LabeledIndex(
-        Label,    // memory state label
-        Box<Exp>, // target (resource name expression)
-        Box<Exp>, // index (address expression)
+    // State-labeled expression in specifications:
+    //   label |= expr              (single state)
+    //   pre.. |= expr              (pre-only range)
+    //   ..post |= expr             (post-only range)
+    //   pre..post |= expr          (full range)
+    // Evaluates expr with memory operations resolved to labeled states.
+    StateLabeled(
+        Option<Label>, // pre-state label
+        Box<Exp>,      // inner expression
+        Option<Label>, // post-state label
     ), // spec only
     // (e1, ..., en)
     ExpList(Vec<Exp>),
@@ -1535,6 +1537,7 @@ impl AstDebug for SpecBlockMember_ {
                 uninterpreted,
                 signature,
                 name,
+                access_specifiers,
                 body,
             } => {
                 if *uninterpreted {
@@ -1545,10 +1548,28 @@ impl AstDebug for SpecBlockMember_ {
                 w.write("fun ");
                 w.write(format!("{}", name));
                 signature.ast_debug(w);
+                if let Some(specifiers) = access_specifiers {
+                    w.write(" ");
+                    w.write(format!("[{} access specifiers]", specifiers.len()));
+                }
                 match &body.value {
                     FunctionBody_::Defined(body) => w.block(|w| body.ast_debug(w)),
                     FunctionBody_::Native => w.writeln(";"),
                 }
+            },
+            SpecBlockMember_::AccessOf {
+                fun_param,
+                params,
+                access_specifiers,
+            } => {
+                w.write(format!("access_of<{}>", fun_param));
+                w.write("(");
+                w.list(params, ", ", |w, (v, ty)| {
+                    w.write(format!("{}: ", v));
+                    ty.ast_debug(w);
+                    true
+                });
+                w.write(format!(") {{ {} specifiers }}", access_specifiers.len()));
             },
             SpecBlockMember_::Variable {
                 is_global,
@@ -2115,15 +2136,11 @@ impl AstDebug for Exp_ {
                 s.ast_debug(w);
                 w.write("}");
             },
-            E::Behavior(kind, pre_label, fn_name, type_args, sp!(_, args), post_label) => {
-                if let Some(label) = pre_label {
-                    w.write(format!("{}@", label.value().as_str()));
-                }
+            E::Behavior(kind, fn_name, type_args, sp!(_, args)) => {
                 let kind_str = match kind {
                     BehaviorKind::RequiresOf => "requires_of",
                     BehaviorKind::AbortsOf => "aborts_of",
                     BehaviorKind::EnsuresOf => "ensures_of",
-                    BehaviorKind::ModifiesOf => "modifies_of",
                     BehaviorKind::ResultOf => "result_of",
                 };
                 w.write(kind_str);
@@ -2137,28 +2154,15 @@ impl AstDebug for Exp_ {
                 w.write(">(");
                 w.comma(args, |w, e| e.ast_debug(w));
                 w.write(")");
+            },
+            E::StateLabeled(pre_label, inner, post_label) => {
+                if let Some(label) = pre_label {
+                    w.write(format!("{}@", label.value().as_str()));
+                }
+                inner.ast_debug(w);
                 if let Some(label) = post_label {
                     w.write(format!("@{}", label.value().as_str()));
                 }
-            },
-            E::LabeledCall(label, name, type_args, sp!(_, args)) => {
-                w.write(format!("{}@", label.value().as_str()));
-                name.ast_debug(w);
-                if let Some(tys) = type_args {
-                    w.write("<");
-                    w.comma(tys, |w, ty| ty.ast_debug(w));
-                    w.write(">");
-                }
-                w.write("(");
-                w.comma(args, |w, e| e.ast_debug(w));
-                w.write(")");
-            },
-            E::LabeledIndex(label, target, index) => {
-                w.write(format!("{}@", label.value().as_str()));
-                target.ast_debug(w);
-                w.write("[");
-                index.ast_debug(w);
-                w.write("]");
             },
             E::UnresolvedError => w.write("_|_"),
         }

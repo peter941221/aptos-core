@@ -5,9 +5,9 @@
 use crate::{
     ast::{
         AccessSpecifier, Address, Attribute, AttributeValue, Condition, ConditionKind, Exp,
-        ExpData, FriendDecl, ModuleName, Operation, Pattern, PropertyBag, PropertyValue,
-        QualifiedSymbol, Spec, SpecBlockInfo, SpecBlockTarget, SpecFunDecl, SpecVarDecl, TempIndex,
-        UseDecl, Value,
+        ExpData, FriendDecl, FunParamAccessSpecifiers, MemoryRange, ModuleName, Operation, Pattern,
+        PropertyBag, PropertyValue, QualifiedSymbol, Spec, SpecBlockInfo, SpecBlockTarget,
+        SpecFunDecl, SpecVarDecl, TempIndex, UseDecl, Value,
     },
     builder::{
         exp_builder::ExpTranslator,
@@ -22,8 +22,9 @@ use crate::{
     metadata::lang_feature_versions::LANGUAGE_VERSION_FOR_PUBLIC_STRUCT,
     model::{
         self, EqIgnoringLoc, FieldData, FieldId, FunId, FunctionData, FunctionKind, FunctionLoc,
-        Loc, ModuleId, MoveIrLoc, NamedConstantData, NamedConstantId, NodeId, Parameter, SchemaId,
-        SpecFunId, SpecVarId, StructData, StructId, TypeParameter, TypeParameterKind, UserId,
+        GlobalId, Loc, ModuleId, MoveIrLoc, NamedConstantData, NamedConstantId, NodeId, Parameter,
+        SchemaId, SpecFunId, SpecVarId, StructData, StructId, TypeParameter, TypeParameterKind,
+        UserId,
     },
     pragmas::{
         is_pragma_valid_for_block, is_property_valid_for_condition, CONDITION_DEACTIVATED_PROP,
@@ -89,6 +90,8 @@ pub(crate) struct ModuleBuilder<'env, 'translator> {
     pub fun_defs: BTreeMap<Symbol, Exp>,
     /// Translated access specifiers, if we are compiling Move code
     pub fun_access_specifiers: BTreeMap<Symbol, Vec<AccessSpecifier>>,
+    /// Access specifiers for function-typed parameters (from `access_of`)
+    pub fun_param_access: BTreeMap<Symbol, Vec<FunParamAccessSpecifiers>>,
     /// Translated struct specifications.
     pub struct_specs: BTreeMap<Symbol, Spec>,
     /// Translated module spec
@@ -98,6 +101,10 @@ pub(crate) struct ModuleBuilder<'env, 'translator> {
     /// Let bindings for the current spec block, characterized by a boolean indicating whether
     /// post state is active and the node id of the original expression of the let.
     pub spec_block_lets: BTreeMap<Symbol, (bool, NodeId)>,
+    /// Shared state label map for the current spec block. Ensures that the same label name
+    /// (e.g. `S`) used in different conditions within the same spec block maps to the same
+    /// MemoryLabel (GlobalId).
+    pub spec_block_state_labels: BTreeMap<Symbol, GlobalId>,
 }
 
 /// A value which we pass in to spec block analyzers, describing the resolved target of the spec
@@ -169,10 +176,12 @@ impl<'env, 'translator> ModuleBuilder<'env, 'translator> {
             fun_specs: BTreeMap::new(),
             fun_defs: BTreeMap::new(),
             fun_access_specifiers: BTreeMap::new(),
+            fun_param_access: BTreeMap::new(),
             struct_specs: BTreeMap::new(),
             module_spec: Spec::default(),
             spec_block_infos: Default::default(),
             spec_block_lets: BTreeMap::new(),
+            spec_block_state_labels: BTreeMap::new(),
         }
     }
 
@@ -780,11 +789,18 @@ impl ModuleBuilder<'_, '_> {
     ) {
         let name = self.symbol_pool().make(&name.0.value);
         let (type_params, params, result_type) = self.decl_ana_signature(signature, false);
-        // Eliminate references in parameters and result type for spec functions
+        // Eliminate references in parameters and result type for spec functions,
+        // but keep &mut parameters as-is since they have dual-state semantics.
         // `derive_spec_fun` does the same when generating spec functions from general move functions
         let params = params
             .into_iter()
-            .map(|Parameter(sym, ty, loc)| Parameter(sym, ty.skip_reference().clone(), loc))
+            .map(|Parameter(sym, ty, loc)| {
+                if ty.is_mutable_reference() {
+                    Parameter(sym, ty, loc)
+                } else {
+                    Parameter(sym, ty.skip_reference().clone(), loc)
+                }
+            })
             .collect_vec();
         let result_type = result_type.skip_reference().clone();
 
@@ -794,7 +810,7 @@ impl ModuleBuilder<'_, '_> {
             self.qualified_by_module(name),
             SpecOrBuiltinFunEntry {
                 loc: loc.clone(),
-                oper: Operation::SpecFunction(self.module_id, fun_id, None),
+                oper: Operation::SpecFunction(self.module_id, fun_id, MemoryRange::default()),
                 type_params: type_params.clone(),
                 type_param_constraints: BTreeMap::default(),
                 params: params.clone(),
@@ -810,15 +826,17 @@ impl ModuleBuilder<'_, '_> {
             name,
             type_params,
             params,
-            context_params: None,
             result_type,
             used_memory: BTreeSet::new(),
+            old_memory: BTreeSet::new(),
             uninterpreted,
             is_move_fun: false,
             is_native: false,
             body: None,
             callees: Default::default(),
             is_recursive: Default::default(),
+            access_specifiers: None,
+            uses_old: false,
             insts_using_generic_type_reflection: Default::default(),
             spec: RefCell::new(Default::default()),
         };
@@ -1510,6 +1528,7 @@ impl ModuleBuilder<'_, '_> {
         self.update_spec(context, move |spec| spec.loc = Some(block_loc_for_spec));
 
         assert!(self.spec_block_lets.is_empty());
+        assert!(self.spec_block_state_labels.is_empty());
 
         // Sort members so that lets are processed first. This is needed so that lets included
         // from schemas are properly renamed on name clash.
@@ -1527,46 +1546,49 @@ impl ModuleBuilder<'_, '_> {
             self.def_ana_spec_block_member(context, member)
         }
 
-        // Validate behavior predicate state labels
-        self.validate_behavior_state_labels(context, &block_loc);
+        // Validate state labels
+        self.validate_state_labels(context, &block_loc);
 
-        // clear the let bindings stored in the build.
+        // clear the let bindings and state labels stored in the build.
         self.spec_block_lets.clear();
+        self.spec_block_state_labels.clear();
     }
 
-    /// Validates state labels in behavior predicates within a spec block.
+    /// Validates state labels within a spec block.
     /// Checks that:
-    /// 1. Every pre-state label references a post-state label defined in the same spec
+    /// 1. Every post-state label is referenced by a pre-state label in the same spec
     /// 2. There are no cycles in state label references
-    fn validate_behavior_state_labels(&mut self, context: &SpecBlockContext, loc: &Loc) {
+    fn validate_state_labels(&mut self, context: &SpecBlockContext, loc: &Loc) {
         use crate::ast::MemoryLabel;
         use std::collections::{BTreeMap, BTreeSet};
 
-        // Each behavior predicate with state labels can have:
-        // - A pre-label: reads from this state (must be defined by another predicate's post-label)
-        // - A post-label: defines this state (other predicates can reference it as pre-label)
+        // Each state-labeled expression can have:
+        // - A pre-label: reads from this state (must be defined by another expression's post-label)
+        // - A post-label: defines this state (other expressions can reference it as pre-label)
 
-        // Collect: (pre_label, post_label, node_id) for each predicate with state labels
-        let mut behavior_predicates: Vec<(Option<MemoryLabel>, Option<MemoryLabel>, NodeId)> =
-            Vec::new();
+        // Collect: (pre_label, post_label, node_id) for each expression with state labels
+        let mut labeled_exprs: Vec<(Option<MemoryLabel>, Option<MemoryLabel>, NodeId)> = Vec::new();
 
         // Also collect labels used in Global/Exists memory access operations, with NodeId
         // for error reporting
         let mut memory_access_labels: Vec<(MemoryLabel, NodeId)> = Vec::new();
 
         self.update_spec(context, |spec| {
-            fn collect_behavior_predicates(
+            fn collect_state_labels(
                 exp: &Exp,
                 predicates: &mut Vec<(Option<MemoryLabel>, Option<MemoryLabel>, NodeId)>,
                 memory_labels: &mut Vec<(MemoryLabel, NodeId)>,
             ) {
+                // Collect pre/post labels from MemoryRange on Behavior/SpecFunction
+                // and memory labels from Global/Exists operations.
                 exp.visit_pre_order(&mut |e| {
                     if let ExpData::Call(id, op, _) = e {
                         match op {
-                            Operation::Behavior(_, state)
-                                if state.pre.is_some() || state.post.is_some() =>
-                            {
-                                predicates.push((state.pre, state.post, *id));
+                            Operation::Behavior(_, range)
+                            | Operation::SpecFunction(_, _, range) => {
+                                if range.pre.is_some() || range.post.is_some() {
+                                    predicates.push((range.pre, range.post, *id));
+                                }
                             },
                             Operation::Global(Some(label)) | Operation::Exists(Some(label)) => {
                                 memory_labels.push((*label, *id));
@@ -1579,17 +1601,9 @@ impl ModuleBuilder<'_, '_> {
             }
 
             for cond in &spec.conditions {
-                collect_behavior_predicates(
-                    &cond.exp,
-                    &mut behavior_predicates,
-                    &mut memory_access_labels,
-                );
+                collect_state_labels(&cond.exp, &mut labeled_exprs, &mut memory_access_labels);
                 for additional in &cond.additional_exps {
-                    collect_behavior_predicates(
-                        additional,
-                        &mut behavior_predicates,
-                        &mut memory_access_labels,
-                    );
+                    collect_state_labels(additional, &mut labeled_exprs, &mut memory_access_labels);
                 }
             }
         });
@@ -1602,7 +1616,7 @@ impl ModuleBuilder<'_, '_> {
         // TODO(#18762): Duplicate post-state labels are silently overwritten; should report an error.
         let mut defined_post_labels: BTreeMap<Symbol, Loc> = BTreeMap::new();
         let mut used_pre_labels: BTreeSet<Symbol> = BTreeSet::new();
-        for (pre_label, post_label, node_id) in &behavior_predicates {
+        for (pre_label, post_label, node_id) in &labeled_exprs {
             if let Some(post_name) = post_label.and_then(&get_label_name) {
                 let exp_loc = self.parent.env.get_node_loc(*node_id);
                 defined_post_labels.insert(post_name, exp_loc);
@@ -1620,38 +1634,9 @@ impl ModuleBuilder<'_, '_> {
 
         let symbol_pool = self.symbol_pool();
 
-        // Validate that all pre-labels reference defined post-labels
-        for (pre_label, _, node_id) in &behavior_predicates {
-            if let Some(pre_name) = pre_label.and_then(&get_label_name) {
-                if !defined_post_labels.contains_key(&pre_name) {
-                    let exp_loc = self.parent.env.get_node_loc(*node_id);
-                    self.parent.env.error(
-                        &exp_loc,
-                        &format!(
-                            "state label `{}` is not defined; \
-                             pre-state labels must reference a post-state label defined by another behavior predicate in the same spec",
-                            pre_name.display(symbol_pool)
-                        ),
-                    );
-                }
-            }
-        }
-        // Also validate labels from memory accesses
-        for (label, node_id) in &memory_access_labels {
-            if let Some(name) = get_label_name(*label) {
-                if !defined_post_labels.contains_key(&name) {
-                    let exp_loc = self.parent.env.get_node_loc(*node_id);
-                    self.parent.env.error(
-                        &exp_loc,
-                        &format!(
-                            "state label `{}` is not defined; \
-                             labels in memory accesses must reference a post-state label defined by a behavior predicate in the same spec",
-                            name.display(symbol_pool)
-                        ),
-                    );
-                }
-            }
-        }
+        // Note: we do NOT validate that pre-labels reference defined post-labels.
+        // Pre-only labels are legitimate — they represent state snapshots from sequential
+        // composition (e.g., the state after a `move_from` but before a `move_to`).
 
         // Validate that all post-labels are referenced by some pre-label
         for (post_label, post_loc) in &defined_post_labels {
@@ -1660,7 +1645,7 @@ impl ModuleBuilder<'_, '_> {
                     post_loc,
                     &format!(
                         "state label `{}` is defined but never referenced; \
-                         every post-state label must be referenced by a pre-state label in another behavior predicate",
+                         every post-state label must be referenced by a pre-state label in the same spec",
                         post_label.display(symbol_pool)
                     ),
                 );
@@ -1672,7 +1657,7 @@ impl ModuleBuilder<'_, '_> {
         // post_label_defined -> pre_label_used
         // This means: to get the state of `post_label_defined`, we need the state of `pre_label_used`
         let mut edges: BTreeMap<Symbol, BTreeSet<Symbol>> = BTreeMap::new();
-        for (pre_label, post_label, _) in &behavior_predicates {
+        for (pre_label, post_label, _) in &labeled_exprs {
             let pre_name = pre_label.and_then(&get_label_name);
             let post_name = post_label.and_then(&get_label_name);
             if let (Some(pre), Some(post)) = (pre_name, post_name) {
@@ -1756,9 +1741,20 @@ impl ModuleBuilder<'_, '_> {
             Function {
                 uninterpreted,
                 signature,
+                access_specifiers,
                 body,
                 ..
-            } => self.def_ana_spec_fun(*uninterpreted, signature, body),
+            } => self.def_ana_spec_fun(
+                *uninterpreted,
+                signature,
+                access_specifiers.as_deref(),
+                body,
+            ),
+            AccessOf {
+                fun_param,
+                params,
+                access_specifiers,
+            } => self.def_ana_access_of(loc, context, fun_param, params, access_specifiers),
             Let {
                 name,
                 post_state,
@@ -2681,15 +2677,56 @@ impl ModuleBuilder<'_, '_> {
         &mut self,
         uninterpreted: bool,
         _signature: &EA::FunctionSignature,
+        access_specifiers: Option<&[EA::AccessSpecifier]>,
         body: &EA::FunctionBody,
     ) {
+        if let Some(specs) = access_specifiers {
+            // Validate that spec fun access specifiers only use reads/writes
+            // (no acquires, no negation, no pure)
+            if specs.is_empty() {
+                // Empty specifier list represents `pure`
+                self.parent.error(
+                    &self.parent.to_loc(&body.loc),
+                    "spec functions do not support `pure` access specifier",
+                );
+            }
+            for spec in specs {
+                if spec.value.kind == EA::AccessSpecifierKind::LegacyAcquires {
+                    self.parent.error(
+                        &self.parent.to_loc(&spec.loc),
+                        "spec functions only support `reads` and `writes` access specifiers, \
+                         not `acquires`",
+                    );
+                }
+                if spec.value.negated {
+                    self.parent.error(
+                        &self.parent.to_loc(&spec.loc),
+                        "spec functions do not support negated access specifiers",
+                    );
+                }
+            }
+            let entry = &self.spec_funs[self.spec_fun_index];
+            let type_params = entry.type_params.clone();
+            let params = entry.params.clone();
+            let mut et = ExpTranslator::new_with_old(self, true);
+            let loc = et.to_loc(&body.loc);
+            et.define_type_params(&loc, &type_params, false);
+            et.enter_scope();
+            for Parameter(n, ty, loc) in params {
+                et.define_local(&loc, n, ty, None, None);
+            }
+            let translated = et.translate_access_specifiers(&Some(specs.to_vec()));
+            et.finalize_types(true);
+            self.spec_funs[self.spec_fun_index].access_specifiers = translated;
+        }
         match &body.value {
             EA::FunctionBody_::Defined(seq) => {
                 let entry = &self.spec_funs[self.spec_fun_index];
                 let type_params = entry.type_params.clone();
                 let params = entry.params.clone();
                 let result_type = entry.result_type.clone();
-                let mut et = ExpTranslator::new(self);
+                // Always allow old() in spec fun bodies
+                let mut et = ExpTranslator::new_with_old(self, true);
                 let loc = et.to_loc(&body.loc);
                 et.define_type_params(&loc, &type_params, false);
                 et.enter_scope();
@@ -2714,6 +2751,56 @@ impl ModuleBuilder<'_, '_> {
             },
         }
         self.spec_fun_index += 1;
+    }
+
+    fn def_ana_access_of(
+        &mut self,
+        loc: &Loc,
+        context: &SpecBlockContext,
+        fun_param: &Spanned<move_symbol_pool::Symbol>,
+        params: &[(PA::Var, EA::Type)],
+        access_specifiers: &[EA::AccessSpecifier],
+    ) {
+        // Resolve the function name from context
+        let fun_name = match context {
+            SpecBlockContext::Function(name) => name.clone(),
+            _ => {
+                self.parent
+                    .env
+                    .error(loc, "`access_of` can only appear in a function spec block");
+                return;
+            },
+        };
+        // Translate access specifiers
+        let mut et = ExpTranslator::new_with_old(self, true);
+        et.enter_scope();
+        // Define the access_of parameter names so address specifiers can reference them
+        let translated_params: Vec<Parameter> = params
+            .iter()
+            .map(|(v, ty)| {
+                let ty = et.translate_type(ty);
+                let sym = et.symbol_pool().make(&v.0.value);
+                let loc = et.to_loc(&v.0.loc);
+                et.define_local(&loc, sym, ty.clone(), None, None);
+                Parameter(sym, ty, loc)
+            })
+            .collect();
+        let translated_specs = et.translate_access_specifiers(&Some(access_specifiers.to_vec()));
+        et.finalize_types(true);
+        if let Some(specifiers) = translated_specs {
+            let entry = FunParamAccessSpecifiers {
+                loc: loc.clone(),
+                fun_param: self.symbol_pool().make(&fun_param.value),
+                params: translated_params,
+                specifiers,
+                used_memory: BTreeSet::new(),
+                old_memory: BTreeSet::new(),
+            };
+            self.fun_param_access
+                .entry(fun_name.symbol)
+                .or_default()
+                .push(entry);
+        }
     }
 }
 
@@ -2888,6 +2975,7 @@ impl<'env, 'translator> ModuleBuilder<'env, 'translator> {
         // in schema arguments of includes. This unfortunately means we can't refer in
         // lets to variables included from schemas, but this seems to be a rare use case.
         assert!(self.spec_block_lets.is_empty());
+        assert!(self.spec_block_state_labels.is_empty());
         for member in &block.value.members {
             let member_loc = self.parent.to_loc(&member.loc);
             if let EA::SpecBlockMember_::Let {
@@ -2965,6 +3053,7 @@ impl<'env, 'translator> ModuleBuilder<'env, 'translator> {
             };
         }
         self.spec_block_lets.clear();
+        self.spec_block_state_labels.clear();
     }
 
     /// Extracts all schema inclusions from a list of spec block members.
@@ -3775,6 +3864,10 @@ impl ModuleBuilder<'_, '_> {
             let called_funs = Some(def.as_ref().map(|e| e.called_funs()).unwrap_or_default());
             let used_funs = Some(def.as_ref().map(|e| e.used_funs()).unwrap_or_default());
             let access_specifiers = self.fun_access_specifiers.remove(&name.symbol);
+            let fun_param_access = self
+                .fun_param_access
+                .remove(&name.symbol)
+                .unwrap_or_default();
             let fun_id = FunId::new(name.symbol);
             let data = FunctionData {
                 name: name.symbol,
@@ -3795,6 +3888,10 @@ impl ModuleBuilder<'_, '_> {
                 params: entry.params.clone(),
                 result_type: entry.result_type.clone(),
                 access_specifiers,
+                fun_param_access,
+                spec_used_memory: BTreeSet::new(),
+                spec_old_memory: BTreeSet::new(),
+                spec_uses_old: false,
                 acquired_structs: None,
                 spec: spec.into(),
                 def,

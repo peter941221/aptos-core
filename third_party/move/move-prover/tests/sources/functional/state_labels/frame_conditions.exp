@@ -1,0 +1,26 @@
+Move prover returns: exiting with verification errors
+error: function does not abort under this condition
+    ┌─ tests/sources/functional/state_labels/frame_conditions.move:154:9
+    │
+154 │         aborts_if true; // error: abort not covered by aborts_if
+    │         ^^^^^^^^^^^^^^^
+    │
+    =     at tests/sources/functional/state_labels/frame_conditions.move:147: test_aborts_of_wrong
+    =         addr = <redacted>
+    =     at tests/sources/functional/state_labels/frame_conditions.move:148: test_aborts_of_wrong
+    =         result = <redacted>
+    =     at tests/sources/functional/state_labels/frame_conditions.move:152: test_aborts_of_wrong
+    =     at tests/sources/functional/state_labels/frame_conditions.move:154: test_aborts_of_wrong (spec)
+
+error: post-condition does not hold
+    ┌─ tests/sources/functional/state_labels/frame_conditions.move:170:9
+    │
+170 │         ensures result == global<Counter>(addr).value + 1; // error: post-condition does not hold
+    │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    │
+    =     at tests/sources/functional/state_labels/frame_conditions.move:162: test_reads_frame_wrong_result
+    =         addr = <redacted>
+    =     at tests/sources/functional/state_labels/frame_conditions.move:163: test_reads_frame_wrong_result
+    =         result = <redacted>
+    =     at tests/sources/functional/state_labels/frame_conditions.move:167: test_reads_frame_wrong_result
+    =     at tests/sources/functional/state_labels/frame_conditions.move:170: test_reads_frame_wrong_result (spec)

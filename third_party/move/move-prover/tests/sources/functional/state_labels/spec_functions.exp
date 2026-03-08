@@ -1,0 +1,12 @@
+Move prover returns: exiting with verification errors
+error: post-condition does not hold
+   ┌─ tests/sources/functional/state_labels/spec_functions.move:92:9
+   │
+92 │         ensures counter_is_positive(addr); // error: not guaranteed by spec
+   │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   │
+   =     at tests/sources/functional/state_labels/spec_functions.move:84: test_spec_fun_wrong_claim
+   =         addr = <redacted>
+   =     at tests/sources/functional/state_labels/spec_functions.move:85: test_spec_fun_wrong_claim
+   =     at tests/sources/functional/state_labels/spec_functions.move:89: test_spec_fun_wrong_claim
+   =     at tests/sources/functional/state_labels/spec_functions.move:92: test_spec_fun_wrong_claim (spec)
