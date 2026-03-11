@@ -570,6 +570,8 @@ pub enum LanguageVersion {
     V2_4,
     #[value(name = "2.5")]
     V2_5,
+    #[value(name = "2.6")]
+    V2_6,
 }
 
 impl LanguageVersion {
@@ -583,6 +585,7 @@ impl LanguageVersion {
             V2_3 => 4,
             V2_4 => 5,
             V2_5 => 6,
+            V2_6 => 7,
         }
     }
 }
@@ -618,6 +621,7 @@ impl std::fmt::Display for LanguageVersion {
             LanguageVersion::V2_3 => "2.3",
             LanguageVersion::V2_4 => "2.4",
             LanguageVersion::V2_5 => "2.5",
+            LanguageVersion::V2_6 => "2.6",
         })
     }
 }
@@ -703,6 +707,8 @@ pub mod known_attributes {
         Persistent,
         /// Marks a function to establish a module reentrancy lock during execution
         ModuleLock,
+        /// Marks a function as immutable: its body cannot change on upgrade
+        Immutable,
     }
 
     impl fmt::Display for AttributePosition {
@@ -740,6 +746,7 @@ pub mod known_attributes {
                     Self::Deprecation(DeprecationAttribute::Deprecated)
                 },
                 LintAttribute::SKIP => Self::Lint(LintAttribute::Allow),
+                ExecutionAttribute::IMMUTABLE => Self::Execution(ExecutionAttribute::Immutable),
                 _ => return None,
             })
         }
@@ -989,7 +996,9 @@ pub mod known_attributes {
     }
 
     impl ExecutionAttribute {
-        const ALL_ATTRIBUTE_NAMES: [&'static str; 2] = [Self::MODULE_LOCK, Self::PERSISTENT];
+        const ALL_ATTRIBUTE_NAMES: [&'static str; 3] =
+            [Self::IMMUTABLE, Self::MODULE_LOCK, Self::PERSISTENT];
+        pub const IMMUTABLE: &'static str = "immutable";
         pub const MODULE_LOCK: &'static str = "module_lock";
         pub const PERSISTENT: &'static str = "persistent";
     }
@@ -1004,6 +1013,7 @@ pub mod known_attributes {
             match self {
                 Self::Persistent => Self::PERSISTENT,
                 Self::ModuleLock => Self::MODULE_LOCK,
+                Self::Immutable => Self::IMMUTABLE,
             }
         }
 
