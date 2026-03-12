@@ -135,12 +135,12 @@ module 0x42::M
     ret
 
 // Function definition at index 1
-#[const] public fun const$NEG(): i64
+#[const, persistent] public fun const$NEG(): i64
     ld_i64 -1
     ret
 
 // Function definition at index 2
-#[const] public fun const$POS(): i64
+#[const, persistent] public fun const$POS(): i64
     ld_i64 100
     ret
 

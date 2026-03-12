@@ -530,14 +530,17 @@ impl ModuleBuilder<'_, '_> {
                 false
             }
         });
-        // #[immutable] on a private constant has no effect: no accessor is generated for private
-        // constants, so there is nothing to pin. Reject it to avoid silent confusion.
-        if is_immutable && move_visibility == Visibility::Private {
+        // #[immutable] is only allowed on public constants. A package constant can be
+        // downgraded to private on upgrade (narrowing visibility is permitted), which would
+        // require removing its `const$NAME` accessor function — but `Immutable` implies
+        // `Persistent`, making removal impossible. Reject non-public to avoid this trap.
+        if is_immutable && move_visibility != Visibility::Public {
             let loc = self.parent.to_loc(&def.loc);
             self.parent.env.error(
                 &loc,
-                "`#[immutable]` cannot be applied to a private constant; \
-                 use `public` or `package` visibility",
+                "`#[immutable]` on a constant requires `public` visibility; \
+                 `package` constants can be downgraded to `private` on upgrade, \
+                 which would conflict with the `Persistent` constraint implied by `#[immutable]`",
             );
         }
         let mut et = ExpTranslator::new(self);

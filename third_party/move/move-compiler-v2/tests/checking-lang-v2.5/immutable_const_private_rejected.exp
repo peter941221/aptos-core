@@ -1,7 +1,13 @@
 
 Diagnostics:
-error: `#[immutable]` cannot be applied to a private constant; use `public` or `package` visibility
-  ┌─ tests/checking-lang-v2.5/immutable_const_private_rejected.move:5:5
+error: `#[immutable]` on a constant requires `public` visibility; `package` constants can be downgraded to `private` on upgrade, which would conflict with the `Persistent` constraint implied by `#[immutable]`
+  ┌─ tests/checking-lang-v2.5/immutable_const_private_rejected.move:6:5
   │
-5 │     const PRIV: u64 = 42;
+6 │     const PRIV: u64 = 42;
   │     ^^^^^^^^^^^^^^^^^^^^^
+
+error: `#[immutable]` on a constant requires `public` visibility; `package` constants can be downgraded to `private` on upgrade, which would conflict with the `Persistent` constraint implied by `#[immutable]`
+   ┌─ tests/checking-lang-v2.5/immutable_const_private_rejected.move:11:5
+   │
+11 │     package const PKG: u64 = 99;
+   │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^

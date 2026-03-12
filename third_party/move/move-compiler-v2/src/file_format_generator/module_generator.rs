@@ -1728,7 +1728,13 @@ impl ModuleContext<'_> {
                 .any(|c| c.get_name() == const_sym && c.is_immutable());
             let mut attrs = vec![FF::FunctionAttribute::ConstantAccessor];
             if is_immutable {
+                // #[immutable] is only allowed on public constants, so this accessor is
+                // public and also carries Immutable (body frozen) and Persistent (non-removable).
                 attrs.push(FF::FunctionAttribute::Immutable);
+                attrs.push(FF::FunctionAttribute::Persistent);
+            } else if fun_env.visibility() == Visibility::Public {
+                // Public non-immutable accessor: non-removable but body is not frozen.
+                attrs.push(FF::FunctionAttribute::Persistent);
             }
             return attrs;
         }
