@@ -27,6 +27,7 @@ use move_binary_format::{
     errors::{PartialVMError, PartialVMResult},
     file_format::{
         Bytecode, CodeUnit, CompiledModule, FunctionAttribute, FunctionDefinition, SignatureToken,
+        Visibility,
     },
 };
 use move_core_types::{
@@ -87,6 +88,22 @@ pub fn check_const_accessor_impl(
     }
 
     // Phase 2: implementation invariants.
+
+    // A non-public `ConstantAccessor` function must not carry `Immutable`.
+    // Only public constants may be `#[immutable]`; a package constant can be
+    // downgraded to private on upgrade (which would require removing the accessor),
+    // so combining `ConstantAccessor` + `Immutable` on a non-public function is invalid.
+    if function_definition.visibility != Visibility::Public
+        && handle
+            .attributes
+            .iter()
+            .any(|a| matches!(a, FunctionAttribute::Immutable))
+    {
+        return Err(PartialVMError::new(StatusCode::INVALID_CONST_API_CODE).with_message(
+            "a non-public ConstantAccessor function must not carry the Immutable attribute; \
+             only public constants may be #[immutable]",
+        ));
+    }
 
     // Must have a code body.
     let code = match &function_definition.code {
