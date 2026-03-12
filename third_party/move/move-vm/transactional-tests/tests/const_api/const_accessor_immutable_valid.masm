@@ -1,0 +1,8 @@
+//# publish --print-bytecode
+module 0x66::test_const_accessor_immutable_valid
+
+// Valid: public const$NAME may carry both #[const] and #[immutable].
+// #[immutable] on a public constant means the accessor body is frozen on upgrade.
+#[const, immutable, persistent] public fun const$MAX(): u64
+    ld_u64 100
+    ret

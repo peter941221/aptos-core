@@ -1,0 +1,9 @@
+//# publish --print-bytecode
+module 0x66::test_const_accessor_immutable_non_public_invalid
+
+// Invalid: a non-public ConstantAccessor function must not carry Immutable.
+// Only public constants may be #[immutable]; combining ConstantAccessor + Immutable
+// on a friend (package) function is rejected by the bytecode verifier.
+#[const, immutable] friend fun const$PKG(): u64
+    ld_u64 50
+    ret

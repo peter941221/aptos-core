@@ -1,0 +1,13 @@
+processed 1 task
+task 0 lines 1-8:  publish --print-bytecode [module 0x66::test_const_accessor_immutable_valid]
+
+== BEGIN Bytecode ==
+// Bytecode version v9
+module 0x66::test_const_accessor_immutable_valid
+// Function definition at index 0
+#[const, immutable, persistent] public fun const$MAX(): u64
+    ld_u64 100
+    ret
+
+
+== END Bytecode ==
