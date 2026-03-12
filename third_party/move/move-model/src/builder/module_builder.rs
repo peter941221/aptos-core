@@ -74,8 +74,6 @@ pub(crate) struct ModuleBuilder<'env, 'translator> {
     pub package_funs: BTreeSet<FunId>,
     /// Set of structs with package visibility in the current module
     pub package_structs: BTreeSet<StructId>,
-    /// Set of constants with package visibility in the current module
-    pub package_consts: BTreeSet<NamedConstantId>,
     /// Translated specification functions.
     pub spec_funs: Vec<SpecFunDecl>,
     /// During the definition analysis, the index into `spec_funs` we are currently
@@ -163,7 +161,6 @@ impl<'env, 'translator> ModuleBuilder<'env, 'translator> {
             package_fun_loc: None,
             package_funs: BTreeSet::new(),
             package_structs: BTreeSet::new(),
-            package_consts: BTreeSet::new(),
             friend_decls: vec![],
             spec_funs: vec![],
             inline_spec_builder: Spec::default(),
@@ -502,7 +499,6 @@ impl ModuleBuilder<'_, '_> {
                 &format!("duplicate declaration of const `{}`", &name.value()),
             )
         }
-        let const_id = NamedConstantId::new(qsym.symbol);
         let (move_visibility, has_package_visibility) = match def.visibility {
             EA::Visibility::Public(_) => (Visibility::Public, false),
             EA::Visibility::Friend(loc) => {
@@ -516,31 +512,28 @@ impl ModuleBuilder<'_, '_> {
                 if self.package_fun_loc.is_none() {
                     self.package_fun_loc = Some(loc);
                 }
-                self.package_consts.insert(const_id);
                 (Visibility::Friend, true)
             },
         };
         let attributes = self.translate_attributes(&def.attributes);
-        // Check if #[immutable] is present.
-        let is_immutable = attributes.iter().any(|a| {
+        // Check if #[frozen] is present.
+        let is_frozen = attributes.iter().any(|a| {
             if let Attribute::Apply(_, name, _) = a {
-                self.parent.env.symbol_pool().string(*name).as_str()
-                    == well_known::IMMUTABLE_ATTRIBUTE
+                self.parent.env.symbol_pool().string(*name).as_str() == well_known::FROZEN_ATTRIBUTE
             } else {
                 false
             }
         });
-        // #[immutable] is only allowed on public constants. A package constant can be
-        // downgraded to private on upgrade (narrowing visibility is permitted), which would
-        // require removing its `const$NAME` accessor function — but `Immutable` implies
-        // `Persistent`, making removal impossible. Reject non-public to avoid this trap.
-        if is_immutable && move_visibility != Visibility::Public {
+        // #[frozen] is only allowed on public constants:
+        // 1. the value of a private constant can always be changed;
+        // 2. due to upgrade rule of package function, a package constant can be
+        // downgraded to private, which makes it possible to be changed on upgrade.
+        // Reject non-public to avoid this issue.
+        if is_frozen && move_visibility != Visibility::Public {
             let loc = self.parent.to_loc(&def.loc);
             self.parent.env.error(
                 &loc,
-                "`#[immutable]` on a constant requires `public` visibility; \
-                 `package` constants can be downgraded to `private` on upgrade, \
-                 which would conflict with the `Persistent` constraint implied by `#[immutable]`",
+                "`#[frozen]` on a constant requires `public` visibility",
             );
         }
         let mut et = ExpTranslator::new(self);
@@ -556,7 +549,7 @@ impl ModuleBuilder<'_, '_> {
             has_package_visibility,
             users: BTreeSet::new(),
             attributes,
-            is_immutable,
+            is_frozen,
         });
     }
 
@@ -3870,7 +3863,7 @@ impl ModuleBuilder<'_, '_> {
                 has_package_visibility,
                 users,
                 attributes,
-                is_immutable,
+                is_frozen,
             } = const_entry.clone();
             let data = NamedConstantData {
                 name: name.symbol,
@@ -3880,7 +3873,7 @@ impl ModuleBuilder<'_, '_> {
                 visibility: move_visibility,
                 has_package_visibility,
                 attributes,
-                is_immutable,
+                is_frozen,
                 users,
             };
             named_constants.insert(NamedConstantId::new(name.symbol), data);

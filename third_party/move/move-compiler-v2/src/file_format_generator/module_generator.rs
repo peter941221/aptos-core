@@ -22,15 +22,15 @@ use move_core_types::{
     account_address::AccountAddress,
     identifier::Identifier,
     language_storage::{
-        BORROW, BORROW_MUT, DOLLAR_SIGN_DELIMITER, PACK, PACK_VARIANT, TEST_VARIANT, UNPACK,
+        BORROW, BORROW_MUT, CONST, DOLLAR_SIGN_DELIMITER, PACK, PACK_VARIANT, TEST_VARIANT, UNPACK,
         UNPACK_VARIANT,
     },
     metadata::Metadata,
 };
 
 /// The prefix used for compiler-generated constant accessor function names (`const$`).
-/// CONST = "const", DOLLAR_SIGN_DELIMITER = "$".
-const CONST_ACCESSOR_PREFIX: &str = "const$";
+static CONST_ACCESSOR_PREFIX: once_cell::sync::Lazy<String> =
+    once_cell::sync::Lazy::new(|| format!("{}{}", CONST, DOLLAR_SIGN_DELIMITER));
 use move_ir_types::ast as IR_AST;
 use move_model::{
     ast::{AccessSpecifier, AccessSpecifierKind, AddressSpecifier, Attribute, ResourceSpecifier},
@@ -1718,22 +1718,22 @@ impl ModuleContext<'_> {
     /// function. This includes annotated ones as well as ones which are derived.
     pub(crate) fn function_attributes(&self, fun_env: &FunctionEnv) -> Vec<FF::FunctionAttribute> {
         // Compiler-generated `const$NAME` accessor functions carry ConstantAccessor and,
-        // if the underlying constant is #[immutable], also Immutable.
+        // if the underlying constant is #[frozen], also Immutable.
         let fun_name = fun_env.symbol_pool().string(fun_env.get_name()).to_string();
-        if let Some(const_name_str) = fun_name.strip_prefix(CONST_ACCESSOR_PREFIX) {
+        if let Some(const_name_str) = fun_name.strip_prefix(CONST_ACCESSOR_PREFIX.as_str()) {
             let const_sym = fun_env.symbol_pool().make(const_name_str);
-            let is_immutable = fun_env
+            let is_frozen = fun_env
                 .module_env
                 .get_named_constants()
-                .any(|c| c.get_name() == const_sym && c.is_immutable());
+                .any(|c| c.get_name() == const_sym && c.is_frozen());
             let mut attrs = vec![FF::FunctionAttribute::ConstantAccessor];
-            if is_immutable {
-                // #[immutable] is only allowed on public constants, so this accessor is
+            if is_frozen {
+                // #[frozen] is only allowed on public constants, so this accessor is
                 // public and also carries Immutable (body frozen) and Persistent (non-removable).
                 attrs.push(FF::FunctionAttribute::Immutable);
                 attrs.push(FF::FunctionAttribute::Persistent);
             } else if fun_env.visibility() == Visibility::Public {
-                // Public non-immutable accessor: non-removable but body is not frozen.
+                // Public accessor without #[frozen]: non-removable but body is not frozen.
                 attrs.push(FF::FunctionAttribute::Persistent);
             }
             return attrs;

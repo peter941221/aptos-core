@@ -707,6 +707,8 @@ pub mod known_attributes {
         Persistent,
         /// Marks a function to establish a module reentrancy lock during execution
         ModuleLock,
+        /// Marks a public constant as non-upgradable: its value cannot change on upgrade
+        Frozen,
     }
 
     impl fmt::Display for AttributePosition {
@@ -744,6 +746,7 @@ pub mod known_attributes {
                     Self::Deprecation(DeprecationAttribute::Deprecated)
                 },
                 LintAttribute::SKIP => Self::Lint(LintAttribute::Allow),
+                ExecutionAttribute::FROZEN => Self::Execution(ExecutionAttribute::Frozen),
                 _ => return None,
             })
         }
@@ -993,7 +996,9 @@ pub mod known_attributes {
     }
 
     impl ExecutionAttribute {
-        const ALL_ATTRIBUTE_NAMES: [&'static str; 2] = [Self::MODULE_LOCK, Self::PERSISTENT];
+        const ALL_ATTRIBUTE_NAMES: [&'static str; 3] =
+            [Self::FROZEN, Self::MODULE_LOCK, Self::PERSISTENT];
+        pub const FROZEN: &'static str = "frozen";
         pub const MODULE_LOCK: &'static str = "module_lock";
         pub const PERSISTENT: &'static str = "persistent";
     }
@@ -1008,18 +1013,17 @@ pub mod known_attributes {
             match self {
                 Self::Persistent => Self::PERSISTENT,
                 Self::ModuleLock => Self::MODULE_LOCK,
+                Self::Frozen => Self::FROZEN,
             }
         }
 
         fn expected_positions(&self) -> &'static BTreeSet<AttributePosition> {
             static FUNCTION_ONLY: Lazy<BTreeSet<AttributePosition>> =
                 Lazy::new(|| IntoIterator::into_iter([AttributePosition::Function]).collect());
-            static FUNCTION_OR_CONSTANT: Lazy<BTreeSet<AttributePosition>> = Lazy::new(|| {
-                IntoIterator::into_iter([AttributePosition::Function, AttributePosition::Constant])
-                    .collect()
-            });
+            static CONSTANT_ONLY: Lazy<BTreeSet<AttributePosition>> =
+                Lazy::new(|| IntoIterator::into_iter([AttributePosition::Constant]).collect());
             match self {
-                Self::Immutable => &FUNCTION_OR_CONSTANT,
+                Self::Frozen => &CONSTANT_ONLY,
                 Self::Persistent | Self::ModuleLock => &FUNCTION_ONLY,
             }
         }

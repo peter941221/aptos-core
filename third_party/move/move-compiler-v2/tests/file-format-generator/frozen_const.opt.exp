@@ -1,7 +1,7 @@
 
 ============ disassembled file-format ==================
 // Bytecode version v11
-module 0x42::immutable_const
+module 0x42::frozen_const
 // Function definition at index 0
 #[const, immutable, persistent] public fun const$MAX(): u64
     ld_u64 100

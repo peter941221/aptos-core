@@ -30,6 +30,7 @@ CompiledPackageInfo {
                 "bytecode_instruction",
                 "deprecated",
                 "expected_failure",
+                "frozen",
                 "lint::skip",
                 "module_lock",
                 "native_interface",

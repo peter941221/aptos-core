@@ -4436,8 +4436,8 @@ pub struct NamedConstantData {
     /// Attributes attached to this constant.
     pub(crate) attributes: Vec<Attribute>,
 
-    /// Whether this constant is marked #[immutable] (its accessor body cannot change on upgrade).
-    pub(crate) is_immutable: bool,
+    /// Whether this constant is marked #[frozen] (its accessor body cannot change on upgrade).
+    pub(crate) is_frozen: bool,
 
     /// All users of this constant
     pub(crate) users: BTreeSet<UserId>,
@@ -4482,9 +4482,9 @@ impl NamedConstantEnv<'_> {
         self.data.visibility
     }
 
-    /// Returns whether this constant is marked `#[immutable]`.
-    pub fn is_immutable(&self) -> bool {
-        self.data.is_immutable
+    /// Returns whether this constant is marked `#[frozen]`.
+    pub fn is_frozen(&self) -> bool {
+        self.data.is_frozen
     }
 
     /// Returns whether this constant has `package` visibility.

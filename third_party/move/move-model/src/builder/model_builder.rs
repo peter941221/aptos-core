@@ -262,8 +262,8 @@ pub(crate) struct ConstEntry {
     pub has_package_visibility: bool,
     pub users: BTreeSet<UserId>,
     pub attributes: Vec<Attribute>,
-    /// Whether this constant is marked #[immutable] (body cannot change on upgrade).
-    pub is_immutable: bool,
+    /// Whether this constant is marked #[frozen] (body cannot change on upgrade).
+    pub is_frozen: bool,
 }
 
 impl<'env> ModelBuilder<'env> {

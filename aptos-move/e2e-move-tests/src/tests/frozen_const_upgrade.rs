@@ -1,7 +1,7 @@
 // Copyright (c) Aptos Foundation
 // Licensed pursuant to the Innovation-Enabling Source Code License, available at https://github.com/aptos-labs/aptos-core/blob/main/LICENSE
 
-//! E2E upgrade tests for `#[immutable]` on public constants.
+//! E2E upgrade tests for `#[frozen]` on public constants.
 
 use crate::{assert_success, assert_vm_status, MoveHarness};
 use aptos_framework::BuildOptions;
@@ -22,12 +22,12 @@ fn publish(h: &mut MoveHarness, account: &Account, source: &str) -> TransactionS
 }
 
 // ---------------------------------------------------------------------------
-// #[immutable] on public constants (const$NAME accessor)
+// #[frozen] on public constants (const$NAME accessor)
 // ---------------------------------------------------------------------------
 
-/// Upgrading an `#[immutable]` public constant with the same value is allowed.
+/// Upgrading a `#[frozen]` public constant with the same value is allowed.
 #[test]
-fn immutable_const_same_value_ok() {
+fn frozen_const_same_value_ok() {
     let mut h = MoveHarness::new();
     let acc = h.new_account_at(AccountAddress::from_hex_literal("0x910").unwrap());
 
@@ -36,7 +36,7 @@ fn immutable_const_same_value_ok() {
         &acc,
         r#"
         module 0x910::m {
-            #[immutable]
+            #[frozen]
             public const VALUE: u64 = 42;
         }
     "#,
@@ -48,17 +48,17 @@ fn immutable_const_same_value_ok() {
         &acc,
         r#"
         module 0x910::m {
-            #[immutable]
+            #[frozen]
             public const VALUE: u64 = 42;
         }
     "#,
     ));
 }
 
-/// Changing the value of an `#[immutable]` public constant is rejected,
+/// Changing the value of a `#[frozen]` public constant is rejected,
 /// because it changes the body of the `const$VALUE` accessor function.
 #[test]
-fn immutable_const_value_changed_rejected() {
+fn frozen_const_value_changed_rejected() {
     let mut h = MoveHarness::new();
     let acc = h.new_account_at(AccountAddress::from_hex_literal("0x911").unwrap());
 
@@ -67,7 +67,7 @@ fn immutable_const_value_changed_rejected() {
         &acc,
         r#"
         module 0x911::m {
-            #[immutable]
+            #[frozen]
             public const VALUE: u64 = 42;
         }
     "#,
@@ -80,7 +80,7 @@ fn immutable_const_value_changed_rejected() {
             &acc,
             r#"
             module 0x911::m {
-                #[immutable]
+                #[frozen]
                 public const VALUE: u64 = 99;
             }
         "#,
@@ -89,10 +89,10 @@ fn immutable_const_value_changed_rejected() {
     );
 }
 
-/// Removing `#[immutable]` from a public constant is rejected
+/// Removing `#[frozen]` from a public constant is rejected
 /// (the Immutable attribute cannot be removed from the const$NAME accessor).
 #[test]
-fn immutable_const_attribute_removed_rejected() {
+fn frozen_const_attribute_removed_rejected() {
     let mut h = MoveHarness::new();
     let acc = h.new_account_at(AccountAddress::from_hex_literal("0x912").unwrap());
 
@@ -101,13 +101,13 @@ fn immutable_const_attribute_removed_rejected() {
         &acc,
         r#"
         module 0x912::m {
-            #[immutable]
+            #[frozen]
             public const VALUE: u64 = 42;
         }
     "#,
     ));
 
-    // Dropping #[immutable] removes Immutable from the accessor — incompatible.
+    // Dropping #[frozen] removes Immutable from the accessor — incompatible.
     assert_vm_status!(
         publish(
             &mut h,
@@ -122,9 +122,9 @@ fn immutable_const_attribute_removed_rejected() {
     );
 }
 
-/// Adding `#[immutable]` to a previously non-immutable public constant is allowed.
+/// Adding `#[frozen]` to a previously non-frozen public constant is allowed.
 #[test]
-fn immutable_const_add_attribute_ok() {
+fn frozen_const_add_attribute_ok() {
     let mut h = MoveHarness::new();
     let acc = h.new_account_at(AccountAddress::from_hex_literal("0x913").unwrap());
 
@@ -138,22 +138,22 @@ fn immutable_const_add_attribute_ok() {
     "#,
     ));
 
-    // Adding #[immutable] with the same value is compatible.
+    // Adding #[frozen] with the same value is compatible.
     assert_success!(publish(
         &mut h,
         &acc,
         r#"
         module 0x913::m {
-            #[immutable]
+            #[frozen]
             public const VALUE: u64 = 42;
         }
     "#,
     ));
 }
 
-/// Without `#[immutable]`, changing a public constant's value is allowed.
+/// Without `#[frozen]`, changing a public constant's value is allowed.
 #[test]
-fn non_immutable_const_value_change_ok() {
+fn non_frozen_const_value_change_ok() {
     let mut h = MoveHarness::new();
     let acc = h.new_account_at(AccountAddress::from_hex_literal("0x914").unwrap());
 
@@ -167,7 +167,7 @@ fn non_immutable_const_value_change_ok() {
     "#,
     ));
 
-    // No #[immutable] → value change is compatible.
+    // No #[frozen] → value change is compatible.
     assert_success!(publish(
         &mut h,
         &acc,

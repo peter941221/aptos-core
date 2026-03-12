@@ -25,6 +25,7 @@ mod error_map;
 mod events;
 mod fee_payer;
 mod friends;
+mod frozen_const_upgrade;
 mod function_caches;
 mod function_value_capture_option;
 mod function_value_depth;

@@ -60,7 +60,7 @@ pub(crate) fn declare_builtins(trans: &mut ModelBuilder) {
         has_package_visibility: false,
         users: BTreeSet::new(),
         attributes: vec![],
-        is_immutable: false,
+        is_frozen: false,
     };
 
     let mk_num_const =
@@ -75,7 +75,7 @@ pub(crate) fn declare_builtins(trans: &mut ModelBuilder) {
         has_package_visibility: false,
         users: BTreeSet::new(),
         attributes: vec![],
-        is_immutable: false,
+        is_frozen: false,
     };
 
     {

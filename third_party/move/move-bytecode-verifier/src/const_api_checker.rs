@@ -90,7 +90,7 @@ pub fn check_const_accessor_impl(
     // Phase 2: implementation invariants.
 
     // A non-public `ConstantAccessor` function must not carry `Immutable`.
-    // Only public constants may be `#[immutable]`; a package constant can be
+    // Only public constants may be `#[frozen]`; a package constant can be
     // downgraded to private on upgrade (which would require removing the accessor),
     // so combining `ConstantAccessor` + `Immutable` on a non-public function is invalid.
     if function_definition.visibility != Visibility::Public
@@ -99,10 +99,11 @@ pub fn check_const_accessor_impl(
             .iter()
             .any(|a| matches!(a, FunctionAttribute::Immutable))
     {
-        return Err(PartialVMError::new(StatusCode::INVALID_CONST_API_CODE).with_message(
-            "a non-public ConstantAccessor function must not carry the Immutable attribute; \
-             only public constants may be #[immutable]",
-        ));
+        return Err(
+            PartialVMError::new(StatusCode::INVALID_CONST_API_CODE).with_message(
+                "a non-public constant accessor must not carry the Immutable attribute",
+            ),
+        );
     }
 
     // Must have a code body.

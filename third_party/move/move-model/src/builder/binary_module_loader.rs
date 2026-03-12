@@ -514,7 +514,7 @@ impl<'a> BinaryModuleLoader<'a> {
                     add_attribute(CONST, None);
                 },
                 FunctionAttribute::Immutable => {
-                    add_attribute(well_known::IMMUTABLE_ATTRIBUTE, None);
+                    add_attribute(well_known::FROZEN_ATTRIBUTE, None);
                 },
             }
         }

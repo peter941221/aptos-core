@@ -1,0 +1,10 @@
+
+Diagnostics:
+error: invalid 'module' declaration
+   ┌─ tests/checking-lang-v2.5/public_const_mutual_access.move:9:9
+   │
+ 9 │         N::B
+   │         ^^^^ `0x42::N` uses `0x42::M`. This `use` relationship creates a dependency cycle.
+   ·
+19 │         M::A
+   │         ---- `0x42::M` uses `0x42::N`
