@@ -15,6 +15,7 @@ use crate::{
 };
 use anyhow::{anyhow, bail, format_err};
 use aptos_config::config::{NodeConfig, OverrideNodeConfig};
+use aptos_rest_client::{AptosBaseUrl, Client as RestClient};
 use aptos_retrier::fixed_retry_strategy;
 use aptos_sdk::{
     crypto::ed25519::Ed25519PrivateKey,
@@ -32,6 +33,7 @@ use prometheus_http_query::{
     Client as PrometheusClient,
 };
 use regex::Regex;
+use reqwest::Url;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     convert::TryFrom,
@@ -158,6 +160,35 @@ impl K8sSwarm {
     #[allow(dead_code)]
     fn get_kube_client(&self) -> K8sClient {
         self.kube_client.clone()
+    }
+
+    /// Returns all PFN StatefulSets in the namespace.
+    ///
+    /// PFNs are deployed externally (via the forge-pfn-deployer) using the fullnode helm chart,
+    /// which labels them `app.kubernetes.io/part-of=aptos-fullnode`. We further filter by the
+    /// `pfn-` name prefix to distinguish them from any other nodes in the namespace.
+    async fn get_pfn_stateful_sets(&self) -> Result<Vec<StatefulSet>> {
+        // Get all fullnode stateful sets in the namespace
+        let stateful_sets: Api<StatefulSet> =
+            Api::namespaced(self.kube_client.clone(), &self.kube_namespace);
+        let fullnode_sts_list = stateful_sets
+            .list(&ListParams::default().labels("app.kubernetes.io/part-of=aptos-fullnode"))
+            .await?;
+
+        // Get all stateful sets with names starting with "pfn-"
+        let pfn_sts_list = fullnode_sts_list
+            .items
+            .into_iter()
+            .filter(|sts| {
+                sts.metadata
+                    .name
+                    .as_deref()
+                    .unwrap_or_default()
+                    .starts_with("pfn-")
+            })
+            .collect();
+
+        Ok(pfn_sts_list)
     }
 }
 
@@ -347,45 +378,54 @@ impl Swarm for K8sSwarm {
     }
 
     async fn ensure_no_pfn_restart(&self) -> Result<()> {
-        // Get all fullnode stateful sets
-        let stateful_sets: Api<StatefulSet> =
-            Api::namespaced(self.kube_client.clone(), &self.kube_namespace);
-        let fullnode_sts_list = stateful_sets
-            .list(&ListParams::default().labels("app.kubernetes.io/part-of=aptos-fullnode"))
-            .await?;
+        // Get all PFN stateful sets
+        let pfn_sts_list = self.get_pfn_stateful_sets().await?;
 
-        // Filter out the PFN stateful sets based on their names and check for restarts
-        let pfn_sts_list = fullnode_sts_list
-            .items
-            .into_iter()
-            .filter(|sts| {
-                sts.metadata
-                    .name
-                    .as_deref()
-                    .unwrap_or_default()
-                    .starts_with("pfn-")
-            })
-            .collect::<Vec<_>>();
-
-        // If there are no PFN stateful sets, we can skip the restart check to avoid false positives
+        // If there are no PFN stateful sets, skip the check!
         if pfn_sts_list.is_empty() {
             info!("No PFN stateful sets found, skipping PFN restart check!");
             return Ok(());
-        } else {
-            info!(
-                "Found {} PFN stateful sets, checking for restarts!",
-                pfn_sts_list.len()
-            );
         }
+        info!(
+            "Found {} PFN stateful sets, checking for restarts!",
+            pfn_sts_list.len()
+        );
 
-        // Otherwise, check for restarts in the PFN stateful sets
-        for sts in pfn_sts_list.iter() {
+        for sts in &pfn_sts_list {
             let sts_name = sts.metadata.name.as_deref().unwrap_or_default();
             check_for_container_restart(&self.kube_client, &self.kube_namespace, sts_name).await?;
         }
 
         info!("Found no PFN restarts!");
         Ok(())
+    }
+
+    async fn get_pfn_rest_clients(&self, client_timeout: Duration) -> Vec<RestClient> {
+        // Get all PFN stateful sets
+        let pfn_sts_list = match self.get_pfn_stateful_sets().await {
+            Ok(pfn_sts_list) => pfn_sts_list,
+            Err(error) => {
+                warn!("Failed to list PFN stateful sets! Error: {}", error);
+                return vec![];
+            },
+        };
+
+        // For each PFN stateful set, construct a rest client to its REST API endpoint
+        pfn_sts_list
+            .iter()
+            .filter_map(|sts| {
+                let sts_name = sts.metadata.name.as_deref()?;
+                let service_name = format!("{}.{}.svc", sts_name, self.kube_namespace);
+                let url: Url = format!("http://{}:{}/v1", service_name, REST_API_SERVICE_PORT)
+                    .parse()
+                    .ok()?;
+                Some(
+                    RestClient::builder(AptosBaseUrl::Custom(url))
+                        .timeout(client_timeout)
+                        .build(),
+                )
+            })
+            .collect()
     }
 
     async fn query_metrics(

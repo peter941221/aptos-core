@@ -17,6 +17,7 @@ use aptos_genesis::builder::{
 };
 use aptos_infallible::Mutex;
 use aptos_logger::{info, warn};
+use aptos_rest_client::Client as RestClient;
 use aptos_sdk::{
     crypto::{ed25519::Ed25519PrivateKey, encoding_type::EncodingType},
     types::{
@@ -620,6 +621,10 @@ impl Swarm for LocalSwarm {
 
     async fn ensure_no_pfn_restart(&self) -> Result<()> {
         todo!()
+    }
+
+    async fn get_pfn_rest_clients(&self, _client_timeout: Duration) -> Vec<RestClient> {
+        vec![]
     }
 
     async fn query_metrics(
