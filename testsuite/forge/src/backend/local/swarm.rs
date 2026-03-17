@@ -618,6 +618,10 @@ impl Swarm for LocalSwarm {
         todo!()
     }
 
+    async fn ensure_no_pfn_restart(&self) -> Result<()> {
+        todo!()
+    }
+
     async fn query_metrics(
         &self,
         _query: &str,

@@ -76,6 +76,7 @@ pub trait Swarm: Sync + Send {
 
     async fn ensure_no_validator_restart(&self) -> Result<()>;
     async fn ensure_no_fullnode_restart(&self) -> Result<()>;
+    async fn ensure_no_pfn_restart(&self) -> Result<()>;
 
     // Get prometheus metrics from the swarm
     async fn query_metrics(

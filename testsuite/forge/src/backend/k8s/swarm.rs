@@ -346,6 +346,48 @@ impl Swarm for K8sSwarm {
         Ok(())
     }
 
+    async fn ensure_no_pfn_restart(&self) -> Result<()> {
+        // Get all fullnode stateful sets
+        let stateful_sets: Api<StatefulSet> =
+            Api::namespaced(self.kube_client.clone(), &self.kube_namespace);
+        let fullnode_sts_list = stateful_sets
+            .list(&ListParams::default().labels("app.kubernetes.io/part-of=aptos-fullnode"))
+            .await?;
+
+        // Filter out the PFN stateful sets based on their names and check for restarts
+        let pfn_sts_list = fullnode_sts_list
+            .items
+            .into_iter()
+            .filter(|sts| {
+                sts.metadata
+                    .name
+                    .as_deref()
+                    .unwrap_or_default()
+                    .starts_with("pfn-")
+            })
+            .collect::<Vec<_>>();
+
+        // If there are no PFN stateful sets, we can skip the restart check to avoid false positives
+        if pfn_sts_list.is_empty() {
+            info!("No PFN stateful sets found, skipping PFN restart check!");
+            return Ok(());
+        } else {
+            info!(
+                "Found {} PFN stateful sets, checking for restarts!",
+                pfn_sts_list.len()
+            );
+        }
+
+        // Otherwise, check for restarts in the PFN stateful sets
+        for sts in pfn_sts_list.iter() {
+            let sts_name = sts.metadata.name.as_deref().unwrap_or_default();
+            check_for_container_restart(&self.kube_client, &self.kube_namespace, sts_name).await?;
+        }
+
+        info!("Found no PFN restarts!");
+        Ok(())
+    }
+
     async fn query_metrics(
         &self,
         query: &str,
