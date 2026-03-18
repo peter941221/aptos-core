@@ -350,7 +350,8 @@ fn run_tests(pkg_path: &Path, args: &McpArgs) -> anyhow::Result<(bool, String)> 
         },
         Err(e) => {
             log::error!("test execution error: {}", e);
-            Err(e.context("test execution error"))
+            log::error!("captured output ({} bytes): {}", output_str.len(), output_str);
+            Err(e.context(output_str))
         },
     }
 }
