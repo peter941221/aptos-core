@@ -416,9 +416,10 @@ module aptos_experimental::sigma_protocol_withdraw {
     #[test_only]
     /// Creates a withdrawal proof (for testing).
     public fun prove(self: &WithdrawSession, stmt: &Statement<Withdrawal>, witn: &Witness): Proof {
+        let has_auditor = self.has_auditor;
         let (proof, _) = sigma_protocol::prove(
             new_domain_separator(@aptos_experimental, chain_id::get(), WITHDRAWAL_PROTOCOL_ID, bcs::to_bytes(self)),
-            |_X, w| psi(_X, w, self.has_auditor),
+            |_X, w| psi(_X, w, has_auditor),
             stmt,
             witn
         );

@@ -48,10 +48,10 @@ module aptos_experimental::sigma_protocol_homomorphism {
     use aptos_experimental::sigma_protocol_representation_vec::RepresentationVec;
 
     /// The transformation function  $f : \mathbb{G}^{n_1} \times \mathbb{F}^{n_2} \rightarrow \mathbb{G}^m$
-    struct TransformationFunction<phantom P>(|&Statement<P>| RepresentationVec);
+    public struct TransformationFunction<phantom P>(|&Statement<P>| RepresentationVec);
 
     /// The homomorphism $\psi : \mathbb{F}^k \rightarrow \mathbb{G}^m$
-    struct Homomorphism<phantom P>(|&Statement<P>, &Witness| RepresentationVec);
+    public struct Homomorphism<phantom P>(|&Statement<P>, &Witness| RepresentationVec);
 
     /// Computes and returns $\psi(X, w) \in \mathbb{G}^m$ given the public statement $X$ and the secret witness $w$.
     public inline fun evaluate_psi<P>(psi: Homomorphism<P>,

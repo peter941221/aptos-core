@@ -1,5 +1,6 @@
 module aptos_experimental::sigma_protocol_proof {
     friend aptos_experimental::confidential_asset;
+    friend aptos_experimental::sigma_protocol;
 
     use std::error;
     use aptos_std::ristretto255::{RistrettoPoint, Scalar, CompressedRistretto};
@@ -20,7 +21,7 @@ module aptos_experimental::sigma_protocol_proof {
     }
 
     /// Creates a new proof consisting of the commitment $A \in \mathbb{G}^m$ and the scalars $\sigma \in \mathbb{F}^k$.
-    public fun new_proof(
+    public(friend) fun new_proof(
         _A: vector<RistrettoPoint>,
         compressed_A: vector<CompressedRistretto>,
         sigma: vector<Scalar>

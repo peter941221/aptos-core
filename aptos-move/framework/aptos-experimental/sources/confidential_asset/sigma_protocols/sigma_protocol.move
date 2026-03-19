@@ -32,7 +32,7 @@ module aptos_experimental::sigma_protocol {
     #[test_only]
     /// Creates a proof and additionally returns the randomness $\alpha \in \mathbb{F}^k$ used to
     /// create the sigma protocol commitment $A = \psi(\alpha) \in \mathbb{G}^m$.
-    public inline fun prove<P>(
+    public fun prove<P>(
         dst: DomainSeparator,
         psi: Homomorphism<P>,
         stmt: &Statement<P>,
@@ -44,7 +44,7 @@ module aptos_experimental::sigma_protocol {
         let alpha = sigma_protocol_witness::random(k);
 
         // Step 2: A <- \psi(\alpha) \in \Gr^m
-        let _A = evaluate_psi(|_X, w| psi(_X, w), stmt, &alpha);
+        let _A = evaluate_psi(psi, stmt, &alpha);
 
         // Step 3: Derive a random-challenge `e` via Fiat-Shamir
         let compressed_A = compress_points(&_A);

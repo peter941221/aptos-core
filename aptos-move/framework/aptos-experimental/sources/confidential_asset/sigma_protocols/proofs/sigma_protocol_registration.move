@@ -182,8 +182,8 @@ module aptos_experimental::sigma_protocol_registration {
     public(friend) fun assert_verifies(self: &RegistrationSession, stmt: &Statement<Registration>, proof: &Proof) {
         let success = sigma_protocol::verify(
             new_domain_separator(@aptos_experimental, chain_id::get(), PROTOCOL_ID, bcs::to_bytes(self)),
-            |_X, w| psi(_X, w),
-            |_X| f(_X),
+            psi,
+            f,
             stmt,
             proof
         );
@@ -206,7 +206,7 @@ module aptos_experimental::sigma_protocol_registration {
     public fun prove(self: &RegistrationSession, stmt: &Statement<Registration>, witn: &Witness): Proof {
         let (proof, _) = sigma_protocol::prove(
             new_domain_separator(@aptos_experimental, chain_id::get(), PROTOCOL_ID, bcs::to_bytes(self)),
-            |_X, w| psi(_X, w),
+            psi,
             stmt,
             witn
         );
